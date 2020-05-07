@@ -1,5 +1,5 @@
 /*
- * Copyright 2012-2019 the original author or authors.
+ * Copyright 2012-2020 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -38,6 +38,7 @@ import org.springframework.boot.autoconfigure.jdbc.DataSourceProperties;
 import org.springframework.boot.autoconfigure.jdbc.JdbcOperationsDependsOnPostProcessor;
 import org.springframework.boot.autoconfigure.jdbc.NamedParameterJdbcOperationsDependsOnPostProcessor;
 import org.springframework.boot.autoconfigure.liquibase.LiquibaseAutoConfiguration.LiquibaseDataSourceCondition;
+import org.springframework.boot.autoconfigure.liquibase.LiquibaseAutoConfiguration.LiquibaseEntityManagerFactoryDependsOnPostProcessor;
 import org.springframework.boot.autoconfigure.liquibase.LiquibaseAutoConfiguration.LiquibaseJdbcOperationsDependsOnPostProcessor;
 import org.springframework.boot.autoconfigure.liquibase.LiquibaseAutoConfiguration.LiquibaseNamedParameterJdbcOperationsDependsOnPostProcessor;
 import org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration;
@@ -49,6 +50,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcOperations;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcOperations;
+import org.springframework.jdbc.datasource.SimpleDriverDataSource;
 import org.springframework.orm.jpa.AbstractEntityManagerFactoryBean;
 import org.springframework.orm.jpa.LocalContainerEntityManagerFactoryBean;
 
@@ -63,6 +65,7 @@ import org.springframework.orm.jpa.LocalContainerEntityManagerFactoryBean;
  * @author Dominic Gunn
  * @author Dan Zheng
  * @author András Deák
+ * @author Ferenc Gratzer
  * @since 1.1.0
  */
 @Configuration(proxyBeanMethods = false)
@@ -70,7 +73,8 @@ import org.springframework.orm.jpa.LocalContainerEntityManagerFactoryBean;
 @ConditionalOnProperty(prefix = "spring.liquibase", name = "enabled", matchIfMissing = true)
 @Conditional(LiquibaseDataSourceCondition.class)
 @AutoConfigureAfter({ DataSourceAutoConfiguration.class, HibernateJpaAutoConfiguration.class })
-@Import({ LiquibaseJdbcOperationsDependsOnPostProcessor.class,
+@Import({ LiquibaseEntityManagerFactoryDependsOnPostProcessor.class,
+		LiquibaseJdbcOperationsDependsOnPostProcessor.class,
 		LiquibaseNamedParameterJdbcOperationsDependsOnPostProcessor.class })
 public class LiquibaseAutoConfiguration {
 
@@ -83,7 +87,6 @@ public class LiquibaseAutoConfiguration {
 	@Configuration(proxyBeanMethods = false)
 	@ConditionalOnMissingBean(SpringLiquibase.class)
 	@EnableConfigurationProperties({ DataSourceProperties.class, LiquibaseProperties.class })
-	@Import(LiquibaseEntityManagerFactoryDependsOnPostProcessor.class)
 	public static class LiquibaseConfiguration {
 
 		private final LiquibaseProperties properties;
@@ -99,6 +102,7 @@ public class LiquibaseAutoConfiguration {
 			SpringLiquibase liquibase = createSpringLiquibase(liquibaseDataSource.getIfAvailable(),
 					dataSource.getIfUnique(), dataSourceProperties);
 			liquibase.setChangeLog(this.properties.getChangeLog());
+			liquibase.setClearCheckSums(this.properties.isClearChecksums());
 			liquibase.setContexts(this.properties.getContexts());
 			liquibase.setDefaultSchema(this.properties.getDefaultSchema());
 			liquibase.setLiquibaseSchema(this.properties.getLiquibaseSchema());
@@ -111,6 +115,7 @@ public class LiquibaseAutoConfiguration {
 			liquibase.setChangeLogParameters(this.properties.getParameters());
 			liquibase.setRollbackFile(this.properties.getRollbackFile());
 			liquibase.setTestRollbackOnUpdate(this.properties.isTestRollbackOnUpdate());
+			liquibase.setTag(this.properties.getTag());
 			return liquibase;
 		}
 
@@ -141,7 +146,13 @@ public class LiquibaseAutoConfiguration {
 			String url = getProperty(this.properties::getUrl, dataSourceProperties::determineUrl);
 			String user = getProperty(this.properties::getUser, dataSourceProperties::determineUsername);
 			String password = getProperty(this.properties::getPassword, dataSourceProperties::determinePassword);
-			return DataSourceBuilder.create().url(url).username(user).password(password).build();
+			return DataSourceBuilder.create().type(determineDataSourceType()).url(url).username(user).password(password)
+					.build();
+		}
+
+		private Class<? extends DataSource> determineDataSourceType() {
+			Class<? extends DataSource> type = DataSourceBuilder.findType(null);
+			return (type != null) ? type : SimpleDriverDataSource.class;
 		}
 
 		private String getProperty(Supplier<String> property, Supplier<String> defaultValue) {

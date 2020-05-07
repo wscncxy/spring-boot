@@ -1,5 +1,5 @@
 /*
- * Copyright 2012-2019 the original author or authors.
+ * Copyright 2012-2020 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,22 +31,15 @@ import org.springframework.util.Assert;
  * @param <C> the contributor type
  * @param <T> the contributed health component type
  * @author Phillip Webb
+ * @author Scott Frederick
  */
 abstract class HealthEndpointSupport<C, T> {
+
+	static final Health DEFAULT_HEALTH = Health.up().build();
 
 	private final ContributorRegistry<C> registry;
 
 	private final HealthEndpointGroups groups;
-
-	/**
-	 * Throw a new {@link IllegalStateException} to indicate a constructor has been
-	 * deprecated.
-	 * @deprecated since 2.2.0 in order to support deprecated subclass constructors
-	 */
-	@Deprecated
-	HealthEndpointSupport() {
-		throw new IllegalStateException("Unable to create " + getClass() + " using deprecated constructor");
-	}
 
 	/**
 	 * Create a new {@link HealthEndpointSupport} instance.
@@ -79,8 +72,8 @@ abstract class HealthEndpointSupport<C, T> {
 		}
 		Object contributor = getContributor(path, pathOffset);
 		T health = getContribution(apiVersion, group, contributor, showComponents, showDetails,
-				isSystemHealth ? this.groups.getNames() : null);
-		return (health != null) ? new HealthResult<T>(health, group) : null;
+				isSystemHealth ? this.groups.getNames() : null, false);
+		return (health != null) ? new HealthResult<>(health, group) : null;
 	}
 
 	@SuppressWarnings("unchecked")
@@ -98,24 +91,27 @@ abstract class HealthEndpointSupport<C, T> {
 
 	@SuppressWarnings("unchecked")
 	private T getContribution(ApiVersion apiVersion, HealthEndpointGroup group, Object contributor,
-			boolean showComponents, boolean showDetails, Set<String> groupNames) {
+			boolean showComponents, boolean showDetails, Set<String> groupNames, boolean isNested) {
 		if (contributor instanceof NamedContributors) {
 			return getAggregateHealth(apiVersion, group, (NamedContributors<C>) contributor, showComponents,
-					showDetails, groupNames);
+					showDetails, groupNames, isNested);
 		}
 		return (contributor != null) ? getHealth((C) contributor, showDetails) : null;
 	}
 
 	private T getAggregateHealth(ApiVersion apiVersion, HealthEndpointGroup group,
-			NamedContributors<C> namedContributors, boolean showComponents, boolean showDetails,
-			Set<String> groupNames) {
+			NamedContributors<C> namedContributors, boolean showComponents, boolean showDetails, Set<String> groupNames,
+			boolean isNested) {
 		Map<String, T> contributions = new LinkedHashMap<>();
 		for (NamedContributor<C> namedContributor : namedContributors) {
 			String name = namedContributor.getName();
-			if (group.isMember(name)) {
-				T contribution = getContribution(apiVersion, group, namedContributor.getContributor(), showComponents,
-						showDetails, null);
-				contributions.put(name, contribution);
+			C contributor = namedContributor.getContributor();
+			if (group.isMember(name) || isNested) {
+				T contribution = getContribution(apiVersion, group, contributor, showComponents, showDetails, null,
+						true);
+				if (contribution != null) {
+					contributions.put(name, contribution);
+				}
 			}
 		}
 		if (contributions.isEmpty()) {
@@ -132,13 +128,17 @@ abstract class HealthEndpointSupport<C, T> {
 
 	protected final CompositeHealth getCompositeHealth(ApiVersion apiVersion, Map<String, HealthComponent> components,
 			StatusAggregator statusAggregator, boolean showComponents, Set<String> groupNames) {
-		Status status = statusAggregator.getAggregateStatus(
-				components.values().stream().map(HealthComponent::getStatus).collect(Collectors.toSet()));
+		Status status = statusAggregator
+				.getAggregateStatus(components.values().stream().map(this::getStatus).collect(Collectors.toSet()));
 		Map<String, HealthComponent> instances = showComponents ? components : null;
 		if (groupNames != null) {
 			return new SystemHealth(apiVersion, status, instances, groupNames);
 		}
 		return new CompositeHealth(apiVersion, status, instances);
+	}
+
+	private Status getStatus(HealthComponent component) {
+		return (component != null) ? component.getStatus() : Status.UNKNOWN;
 	}
 
 	/**

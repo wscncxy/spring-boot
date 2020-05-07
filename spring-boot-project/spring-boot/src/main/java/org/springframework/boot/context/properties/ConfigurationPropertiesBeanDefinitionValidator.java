@@ -18,6 +18,7 @@ package org.springframework.boot.context.properties;
 
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.BeanCreationException;
+import org.springframework.beans.factory.CannotLoadBeanClassException;
 import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.beans.factory.config.BeanFactoryPostProcessor;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
@@ -40,11 +41,15 @@ class ConfigurationPropertiesBeanDefinitionValidator implements BeanFactoryPostP
 	@Override
 	public void postProcessBeanFactory(ConfigurableListableBeanFactory beanFactory) throws BeansException {
 		for (String beanName : beanFactory.getBeanDefinitionNames()) {
-			BeanDefinition definition = beanFactory.getBeanDefinition(beanName);
-			if (!(definition instanceof ConfigurationPropertiesValueObjectBeanDefinition)) {
+			if (!(beanFactory.containsSingleton(beanName) || isValueObjectBeanDefinition(beanFactory, beanName))) {
 				validate(beanFactory, beanName);
 			}
 		}
+	}
+
+	private boolean isValueObjectBeanDefinition(ConfigurableListableBeanFactory beanFactory, String beanName) {
+		BeanDefinition definition = beanFactory.getBeanDefinition(beanName);
+		return (definition instanceof ConfigurationPropertiesValueObjectBeanDefinition);
 	}
 
 	@Override
@@ -53,12 +58,18 @@ class ConfigurationPropertiesBeanDefinitionValidator implements BeanFactoryPostP
 	}
 
 	private void validate(ConfigurableListableBeanFactory beanFactory, String beanName) {
-		Class<?> beanClass = beanFactory.getType(beanName, false);
-		if (beanClass != null && BindMethod.forClass(beanClass) == BindMethod.VALUE_OBJECT) {
-			throw new BeanCreationException(beanName,
-					"@EnableConfigurationProperties or @ConfigurationPropertiesScan must be used to add "
-							+ "@ConstructorBinding type " + beanClass.getName());
+		try {
+			Class<?> beanClass = beanFactory.getType(beanName, false);
+			if (beanClass != null && BindMethod.forType(beanClass) == BindMethod.VALUE_OBJECT) {
+				throw new BeanCreationException(beanName,
+						"@EnableConfigurationProperties or @ConfigurationPropertiesScan must be used to add "
+								+ "@ConstructorBinding type " + beanClass.getName());
+			}
 		}
+		catch (CannotLoadBeanClassException ex) {
+			// Ignore
+		}
+
 	}
 
 	/**

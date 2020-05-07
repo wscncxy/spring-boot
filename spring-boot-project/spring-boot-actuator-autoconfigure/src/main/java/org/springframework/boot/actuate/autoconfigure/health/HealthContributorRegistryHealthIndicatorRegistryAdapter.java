@@ -1,5 +1,5 @@
 /*
- * Copyright 2012-2019 the original author or authors.
+ * Copyright 2012-2020 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -67,7 +67,7 @@ class HealthContributorRegistryHealthIndicatorRegistryAdapter implements HealthI
 
 	@Override
 	public Map<String, HealthIndicator> getAll() {
-		Map<String, HealthIndicator> all = new LinkedHashMap<String, HealthIndicator>();
+		Map<String, HealthIndicator> all = new LinkedHashMap<>();
 		for (NamedContributor<?> namedContributor : this.contributorRegistry) {
 			if (namedContributor.getContributor() instanceof HealthIndicator) {
 				all.put(namedContributor.getName(), (HealthIndicator) namedContributor.getContributor());

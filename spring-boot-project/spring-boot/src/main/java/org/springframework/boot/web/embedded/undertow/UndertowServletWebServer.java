@@ -1,5 +1,5 @@
 /*
- * Copyright 2012-2019 the original author or authors.
+ * Copyright 2012-2020 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,9 +17,9 @@
 package org.springframework.boot.web.embedded.undertow;
 
 import java.lang.reflect.Field;
-import java.net.BindException;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -29,12 +29,14 @@ import io.undertow.Handlers;
 import io.undertow.Undertow;
 import io.undertow.Undertow.Builder;
 import io.undertow.server.HttpHandler;
+import io.undertow.server.handlers.GracefulShutdownHandler;
 import io.undertow.servlet.api.DeploymentManager;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.xnio.channels.BoundChannel;
 
 import org.springframework.boot.web.server.Compression;
+import org.springframework.boot.web.server.GracefulShutdown;
 import org.springframework.boot.web.server.PortInUseException;
 import org.springframework.boot.web.server.WebServer;
 import org.springframework.boot.web.server.WebServerException;
@@ -74,9 +76,13 @@ public class UndertowServletWebServer implements WebServer {
 
 	private final String serverHeader;
 
+	private final Duration shutdownGracePeriod;
+
 	private Undertow undertow;
 
 	private volatile boolean started = false;
+
+	private volatile GracefulShutdown gracefulShutdown;
 
 	/**
 	 * Create a new {@link UndertowServletWebServer} instance.
@@ -117,6 +123,25 @@ public class UndertowServletWebServer implements WebServer {
 	 */
 	public UndertowServletWebServer(Builder builder, DeploymentManager manager, String contextPath,
 			boolean useForwardHeaders, boolean autoStart, Compression compression, String serverHeader) {
+		this(builder, manager, contextPath, useForwardHeaders, autoStart, compression, serverHeader, null);
+	}
+
+	/**
+	 * Create a new {@link UndertowServletWebServer} instance.
+	 * @param builder the builder
+	 * @param manager the deployment manager
+	 * @param contextPath the root context path
+	 * @param useForwardHeaders if x-forward headers should be used
+	 * @param autoStart if the server should be started
+	 * @param compression compression configuration
+	 * @param serverHeader string to be used in HTTP header
+	 * @param shutdownGracePeriod the period to wait for activity to cease when shutting
+	 * down the server gracefully
+	 * @since 2.3.0
+	 */
+	public UndertowServletWebServer(Builder builder, DeploymentManager manager, String contextPath,
+			boolean useForwardHeaders, boolean autoStart, Compression compression, String serverHeader,
+			Duration shutdownGracePeriod) {
 		this.builder = builder;
 		this.manager = manager;
 		this.contextPath = contextPath;
@@ -124,6 +149,7 @@ public class UndertowServletWebServer implements WebServer {
 		this.autoStart = autoStart;
 		this.compression = compression;
 		this.serverHeader = serverHeader;
+		this.shutdownGracePeriod = shutdownGracePeriod;
 	}
 
 	@Override
@@ -146,14 +172,13 @@ public class UndertowServletWebServer implements WebServer {
 			}
 			catch (Exception ex) {
 				try {
-					if (findBindException(ex) != null) {
+					PortInUseException.ifPortBindingException(ex, (bindException) -> {
 						List<Port> failedPorts = getConfiguredPorts();
-						List<Port> actualPorts = getActualPorts();
-						failedPorts.removeAll(actualPorts);
+						failedPorts.removeAll(getActualPorts());
 						if (failedPorts.size() == 1) {
-							throw new PortInUseException(failedPorts.iterator().next().getNumber());
+							throw new PortInUseException(failedPorts.get(0).getNumber());
 						}
-					}
+					});
 					throw new WebServerException("Unable to start embedded Undertow", ex);
 				}
 				finally {
@@ -180,17 +205,6 @@ public class UndertowServletWebServer implements WebServer {
 		}
 	}
 
-	private BindException findBindException(Exception ex) {
-		Throwable candidate = ex;
-		while (candidate != null) {
-			if (candidate instanceof BindException) {
-				return (BindException) candidate;
-			}
-			candidate = candidate.getCause();
-		}
-		return null;
-	}
-
 	private Undertow createUndertowServer() throws ServletException {
 		HttpHandler httpHandler = this.manager.start();
 		httpHandler = getContextHandler(httpHandler);
@@ -199,6 +213,14 @@ public class UndertowServletWebServer implements WebServer {
 		}
 		if (StringUtils.hasText(this.serverHeader)) {
 			httpHandler = Handlers.header(httpHandler, "Server", this.serverHeader);
+		}
+		if (this.shutdownGracePeriod != null) {
+			GracefulShutdownHandler gracefulShutdownHandler = Handlers.gracefulShutdown(httpHandler);
+			this.gracefulShutdown = new UndertowGracefulShutdown(gracefulShutdownHandler, this.shutdownGracePeriod);
+			httpHandler = gracefulShutdownHandler;
+		}
+		else {
+			this.gracefulShutdown = GracefulShutdown.IMMEDIATE;
 		}
 		this.builder.setHandler(httpHandler);
 		return this.builder.build();
@@ -312,6 +334,15 @@ public class UndertowServletWebServer implements WebServer {
 			return 0;
 		}
 		return ports.get(0).getNumber();
+	}
+
+	@Override
+	public boolean shutDownGracefully() {
+		return this.gracefulShutdown.shutDownGracefully();
+	}
+
+	boolean inGracefulShutdown() {
+		return this.gracefulShutdown.isShuttingDown();
 	}
 
 	/**

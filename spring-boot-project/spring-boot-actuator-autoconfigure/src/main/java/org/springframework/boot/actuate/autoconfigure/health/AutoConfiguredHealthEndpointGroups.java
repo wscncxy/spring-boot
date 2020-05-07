@@ -1,5 +1,5 @@
 /*
- * Copyright 2012-2019 the original author or authors.
+ * Copyright 2012-2020 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -85,7 +85,7 @@ class AutoConfiguredHealthEndpointGroups implements HealthEndpointGroups {
 	private Map<String, HealthEndpointGroup> createGroups(Map<String, Group> groupProperties, BeanFactory beanFactory,
 			StatusAggregator defaultStatusAggregator, HttpCodeStatusMapper defaultHttpCodeStatusMapper,
 			Show defaultShowComponents, Show defaultShowDetails, Set<String> defaultRoles) {
-		Map<String, HealthEndpointGroup> groups = new LinkedHashMap<String, HealthEndpointGroup>();
+		Map<String, HealthEndpointGroup> groups = new LinkedHashMap<>();
 		groupProperties.forEach((groupName, group) -> {
 			Status status = group.getStatus();
 			Show showComponents = (group.getShowComponents() != null) ? group.getShowComponents()

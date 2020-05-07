@@ -1,5 +1,5 @@
 /*
- * Copyright 2012-2019 the original author or authors.
+ * Copyright 2012-2020 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,6 @@ package org.springframework.boot.web.embedded.undertow;
 
 import java.io.Closeable;
 import java.lang.reflect.Field;
-import java.net.BindException;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.util.ArrayList;
@@ -29,6 +28,7 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.xnio.channels.BoundChannel;
 
+import org.springframework.boot.web.server.GracefulShutdown;
 import org.springframework.boot.web.server.PortInUseException;
 import org.springframework.boot.web.server.WebServer;
 import org.springframework.boot.web.server.WebServerException;
@@ -59,6 +59,8 @@ public class UndertowWebServer implements WebServer {
 
 	private final Closeable closeable;
 
+	private final GracefulShutdown gracefulShutdown;
+
 	private Undertow undertow;
 
 	private volatile boolean started = false;
@@ -80,9 +82,23 @@ public class UndertowWebServer implements WebServer {
 	 * @since 2.0.4
 	 */
 	public UndertowWebServer(Undertow.Builder builder, boolean autoStart, Closeable closeable) {
+		this(builder, autoStart, closeable, GracefulShutdown.IMMEDIATE);
+	}
+
+	/**
+	 * Create a new {@link UndertowWebServer} instance.
+	 * @param builder the builder
+	 * @param autoStart if the server should be started
+	 * @param closeable called when the server is stopped
+	 * @param gracefulShutdown handler for graceful shutdown
+	 * @since 2.3.0
+	 */
+	public UndertowWebServer(Undertow.Builder builder, boolean autoStart, Closeable closeable,
+			GracefulShutdown gracefulShutdown) {
 		this.builder = builder;
 		this.autoStart = autoStart;
 		this.closeable = closeable;
+		this.gracefulShutdown = gracefulShutdown;
 	}
 
 	@Override
@@ -104,14 +120,13 @@ public class UndertowWebServer implements WebServer {
 			}
 			catch (Exception ex) {
 				try {
-					if (findBindException(ex) != null) {
-						List<UndertowWebServer.Port> failedPorts = getConfiguredPorts();
-						List<UndertowWebServer.Port> actualPorts = getActualPorts();
-						failedPorts.removeAll(actualPorts);
+					PortInUseException.ifPortBindingException(ex, (bindException) -> {
+						List<Port> failedPorts = getConfiguredPorts();
+						failedPorts.removeAll(getActualPorts());
 						if (failedPorts.size() == 1) {
-							throw new PortInUseException(failedPorts.iterator().next().getNumber());
+							throw new PortInUseException(failedPorts.get(0).getNumber());
 						}
-					}
+					});
 					throw new WebServerException("Unable to start embedded Undertow", ex);
 				}
 				finally {
@@ -131,17 +146,6 @@ public class UndertowWebServer implements WebServer {
 		catch (Exception ex) {
 			// Ignore
 		}
-	}
-
-	private BindException findBindException(Exception ex) {
-		Throwable candidate = ex;
-		while (candidate != null) {
-			if (candidate instanceof BindException) {
-				return (BindException) candidate;
-			}
-			candidate = candidate.getCause();
-		}
-		return null;
 	}
 
 	private String getPortsDescription() {
@@ -243,6 +247,15 @@ public class UndertowWebServer implements WebServer {
 			return 0;
 		}
 		return ports.get(0).getNumber();
+	}
+
+	@Override
+	public boolean shutDownGracefully() {
+		return (this.gracefulShutdown != null) && this.gracefulShutdown.shutDownGracefully();
+	}
+
+	boolean inGracefulShutdown() {
+		return (this.gracefulShutdown != null) && this.gracefulShutdown.isShuttingDown();
 	}
 
 	/**

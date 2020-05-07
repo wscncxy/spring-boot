@@ -1,5 +1,5 @@
 /*
- * Copyright 2012-2019 the original author or authors.
+ * Copyright 2012-2020 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,8 +19,6 @@ package org.springframework.boot.context.properties.bind;
 import java.lang.annotation.Annotation;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
-import java.lang.reflect.Constructor;
-import java.util.function.Predicate;
 
 import org.junit.jupiter.api.Test;
 
@@ -145,7 +143,6 @@ class BindableTests {
 	void toStringShouldShowDetails() {
 		Annotation annotation = AnnotationUtils.synthesizeAnnotation(TestAnnotation.class);
 		Bindable<String> bindable = Bindable.of(String.class).withExistingValue("foo").withAnnotations(annotation);
-		System.out.println(bindable.toString());
 		assertThat(bindable.toString())
 				.contains("type = java.lang.String, value = 'provided', annotations = array<Annotation>["
 						+ "@org.springframework.boot.context.properties.bind.BindableTests$TestAnnotation()]");
@@ -170,59 +167,14 @@ class BindableTests {
 	}
 
 	@Test // gh-18218
-	void withSuppliedValueValueDoesNotForgetAnnotations() {
+	void withSuppliedValueDoesNotForgetAnnotations() {
 		Annotation annotation = AnnotationUtils.synthesizeAnnotation(TestAnnotation.class);
 		Bindable<?> bindable = Bindable.of(String.class).withAnnotations(annotation).withSuppliedValue(() -> "");
 		assertThat(bindable.getAnnotations()).containsExactly(annotation);
 	}
 
-	@Test
-	void withConstructorFilterSetsConstructorFilter() {
-		Predicate<Constructor<?>> constructorFilter = (constructor) -> false;
-		Bindable<?> bindable = Bindable.of(TestNewInstance.class).withConstructorFilter(constructorFilter);
-		assertThat(bindable.getConstructorFilter()).isSameAs(constructorFilter);
-	}
-
-	@Test
-	void withConstructorFilterWhenFilterIsNullMatchesAll() {
-		Bindable<?> bindable = Bindable.of(TestNewInstance.class).withConstructorFilter(null);
-		assertThat(bindable.getConstructorFilter()).isSameAs(Bindable.of(TestNewInstance.class).getConstructorFilter());
-	}
-
 	@Retention(RetentionPolicy.RUNTIME)
 	@interface TestAnnotation {
-
-	}
-
-	static class TestNewInstance {
-
-		private String foo = "hello world";
-
-		String getFoo() {
-			return this.foo;
-		}
-
-		void setFoo(String foo) {
-			this.foo = foo;
-		}
-
-	}
-
-	static class TestNewInstanceWithNoDefaultConstructor {
-
-		TestNewInstanceWithNoDefaultConstructor(String foo) {
-			this.foo = foo;
-		}
-
-		private String foo = "hello world";
-
-		String getFoo() {
-			return this.foo;
-		}
-
-		void setFoo(String foo) {
-			this.foo = foo;
-		}
 
 	}
 

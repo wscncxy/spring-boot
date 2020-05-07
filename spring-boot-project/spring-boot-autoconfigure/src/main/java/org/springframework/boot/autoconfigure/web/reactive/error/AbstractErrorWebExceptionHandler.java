@@ -1,5 +1,5 @@
 /*
- * Copyright 2012-2019 the original author or authors.
+ * Copyright 2012-2020 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,6 +34,7 @@ import org.springframework.boot.web.reactive.error.ErrorWebExceptionHandler;
 import org.springframework.context.ApplicationContext;
 import org.springframework.core.NestedExceptionUtils;
 import org.springframework.core.io.Resource;
+import org.springframework.core.log.LogMessage;
 import org.springframework.http.HttpLogging;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.codec.HttpMessageReader;
@@ -53,6 +54,7 @@ import org.springframework.web.util.HtmlUtils;
  * Abstract base class for {@link ErrorWebExceptionHandler} implementations.
  *
  * @author Brian Clozel
+ * @author Scott Frederick
  * @since 2.0.0
  * @see ErrorAttributes
  */
@@ -130,10 +132,28 @@ public abstract class AbstractErrorWebExceptionHandler implements ErrorWebExcept
 	 * views or JSON payloads.
 	 * @param request the source request
 	 * @param includeStackTrace whether to include the error stacktrace information
-	 * @return the error attributes as a Map.
+	 * @return the error attributes as a Map
+	 * @deprecated since 2.3.0 in favor of
+	 * {@link #getErrorAttributes(ServerRequest, boolean, boolean, boolean)}
 	 */
+	@Deprecated
 	protected Map<String, Object> getErrorAttributes(ServerRequest request, boolean includeStackTrace) {
-		return this.errorAttributes.getErrorAttributes(request, includeStackTrace);
+		return this.errorAttributes.getErrorAttributes(request, includeStackTrace, false, false);
+	}
+
+	/**
+	 * Extract the error attributes from the current request, to be used to populate error
+	 * views or JSON payloads.
+	 * @param request the source request
+	 * @param includeStackTrace whether to include the stacktrace attribute
+	 * @param includeMessage whether to include the message attribute
+	 * @param includeBindingErrors whether to include the errors attribute
+	 * @return the error attributes as a Map
+	 */
+	protected Map<String, Object> getErrorAttributes(ServerRequest request, boolean includeStackTrace,
+			boolean includeMessage, boolean includeBindingErrors) {
+		return this.errorAttributes.getErrorAttributes(request, includeStackTrace, includeMessage,
+				includeBindingErrors);
 	}
 
 	/**
@@ -151,7 +171,31 @@ public abstract class AbstractErrorWebExceptionHandler implements ErrorWebExcept
 	 * @return {@code true} if the error trace has been requested, {@code false} otherwise
 	 */
 	protected boolean isTraceEnabled(ServerRequest request) {
-		String parameter = request.queryParam("trace").orElse("false");
+		return getBooleanParameter(request, "trace");
+	}
+
+	/**
+	 * Check whether the message attribute has been set on the given request.
+	 * @param request the source request
+	 * @return {@code true} if the message attribute has been requested, {@code false}
+	 * otherwise
+	 */
+	protected boolean isMessageEnabled(ServerRequest request) {
+		return getBooleanParameter(request, "message");
+	}
+
+	/**
+	 * Check whether the errors attribute has been set on the given request.
+	 * @param request the source request
+	 * @return {@code true} if the errors attribute has been requested, {@code false}
+	 * otherwise
+	 */
+	protected boolean isBindingErrorsEnabled(ServerRequest request) {
+		return getBooleanParameter(request, "errors");
+	}
+
+	private boolean getBooleanParameter(ServerRequest request, String parameterName) {
+		String parameter = request.queryParam(parameterName).orElse("false");
 		return !"false".equalsIgnoreCase(parameter);
 	}
 
@@ -288,8 +332,8 @@ public abstract class AbstractErrorWebExceptionHandler implements ErrorWebExcept
 		}
 		if (HttpStatus.resolve(response.rawStatusCode()) != null
 				&& response.statusCode().equals(HttpStatus.INTERNAL_SERVER_ERROR)) {
-			logger.error(request.exchange().getLogPrefix() + "500 Server Error for " + formatRequest(request),
-					throwable);
+			logger.error(LogMessage.of(() -> String.format("%s 500 Server Error for %s",
+					request.exchange().getLogPrefix(), formatRequest(request))), throwable);
 		}
 	}
 

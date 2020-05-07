@@ -1,5 +1,5 @@
 /*
- * Copyright 2012-2019 the original author or authors.
+ * Copyright 2012-2020 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -37,6 +37,8 @@ import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
 import org.springframework.beans.factory.config.Scope;
 import org.springframework.beans.factory.support.DefaultListableBeanFactory;
+import org.springframework.boot.availability.AvailabilityChangeEvent;
+import org.springframework.boot.availability.ReadinessState;
 import org.springframework.boot.web.context.ConfigurableWebServerApplicationContext;
 import org.springframework.boot.web.server.WebServer;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
@@ -164,6 +166,16 @@ public class ServletWebServerApplicationContext extends GenericWebApplicationCon
 		if (webServer != null) {
 			publishEvent(new ServletWebServerInitializedEvent(webServer, this));
 		}
+	}
+
+	@Override
+	protected void doClose() {
+		AvailabilityChangeEvent.publish(this, ReadinessState.REFUSING_TRAFFIC);
+		WebServer webServer = this.webServer;
+		if (webServer != null) {
+			webServer.shutDownGracefully();
+		}
+		super.doClose();
 	}
 
 	@Override
