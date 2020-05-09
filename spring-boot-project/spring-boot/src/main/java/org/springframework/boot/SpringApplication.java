@@ -265,15 +265,33 @@ public class SpringApplication {
 	 */
 	@SuppressWarnings({ "unchecked", "rawtypes" })
 	public SpringApplication(ResourceLoader resourceLoader, Class<?>... primarySources) {
+		//资源
 		this.resourceLoader = resourceLoader;
 		Assert.notNull(primarySources, "PrimarySources must not be null");
 		this.primarySources = new LinkedHashSet<>(Arrays.asList(primarySources));
+		/**
+		 * 判断当前Web类型
+		 * {@link WebApplicationType}
+		 */
 		this.webApplicationType = WebApplicationType.deduceFromClasspath();
+		/**
+		 * 获取初始化类List
+		 */
 		setInitializers((Collection) getSpringFactoriesInstances(ApplicationContextInitializer.class));
+		/**
+		 * 获取Listener类List
+		 */
 		setListeners((Collection) getSpringFactoriesInstances(ApplicationListener.class));
+		/**
+		 * 获取当前栈中第一个main类
+		 */
 		this.mainApplicationClass = deduceMainApplicationClass();
 	}
 
+	/**
+	 * 从当前栈中获取第一个有main函数的类作为主类
+	 * @return
+	 */
 	private Class<?> deduceMainApplicationClass() {
 		try {
 			StackTraceElement[] stackTrace = new RuntimeException().getStackTrace();
@@ -296,21 +314,31 @@ public class SpringApplication {
 	 * @return a running {@link ApplicationContext}
 	 */
 	public ConfigurableApplicationContext run(String... args) {
+		//执行过程监控
 		StopWatch stopWatch = new StopWatch();
+		//开始计数
 		stopWatch.start();
 		ConfigurableApplicationContext context = null;
 		Collection<SpringBootExceptionReporter> exceptionReporters = new ArrayList<>();
+		//判断是否开启Headless模式，默认为开启
 		configureHeadlessProperty();
+		//获取SpringApplicationRunListener监听List，这里涉及了 观察者模式
 		SpringApplicationRunListeners listeners = getRunListeners(args);
+		//发布Application开始事件，ApplicationStartingEvent
 		listeners.starting();
 		try {
+			//封装传入参数
 			ApplicationArguments applicationArguments = new DefaultApplicationArguments(args);
+			//封装环境参数配置
 			ConfigurableEnvironment environment = prepareEnvironment(listeners, applicationArguments);
 			configureIgnoreBeanInfo(environment);
+			//打印横幅
 			Banner printedBanner = printBanner(environment);
+			//创建上下文容器
 			context = createApplicationContext();
 			exceptionReporters = getSpringFactoriesInstances(SpringBootExceptionReporter.class,
 					new Class[] { ConfigurableApplicationContext.class }, context);
+			//准备容器
 			prepareContext(context, environment, listeners, applicationArguments, printedBanner);
 			refreshContext(context);
 			afterRefresh(context, applicationArguments);
@@ -336,12 +364,20 @@ public class SpringApplication {
 		return context;
 	}
 
+	/**
+	 * 加载环境配置参数
+	 * @param listeners 监听者
+	 * @param applicationArguments 启动参数
+	 * @return
+	 */
 	private ConfigurableEnvironment prepareEnvironment(SpringApplicationRunListeners listeners,
 			ApplicationArguments applicationArguments) {
 		// Create and configure the environment
 		ConfigurableEnvironment environment = getOrCreateEnvironment();
+		//获取&整合配置
 		configureEnvironment(environment, applicationArguments.getSourceArgs());
 		ConfigurationPropertySources.attach(environment);
+		//广播环境配置预处理事件
 		listeners.environmentPrepared(environment);
 		bindToSpringApplication(environment);
 		if (!this.isCustomEnvironment) {
@@ -363,6 +399,14 @@ public class SpringApplication {
 		}
 	}
 
+	/**
+	 * 容器准备
+	 * @param context
+	 * @param environment
+	 * @param listeners
+	 * @param applicationArguments
+	 * @param printedBanner
+	 */
 	private void prepareContext(ConfigurableApplicationContext context, ConfigurableEnvironment environment,
 			SpringApplicationRunListeners listeners, ApplicationArguments applicationArguments, Banner printedBanner) {
 		context.setEnvironment(environment);
@@ -410,34 +454,84 @@ public class SpringApplication {
 				System.getProperty(SYSTEM_PROPERTY_JAVA_AWT_HEADLESS, Boolean.toString(this.headless)));
 	}
 
+	/**
+	 * 从配置中获取SpringApplicationRunListener子类，子类构造函数必须有Constructor(SpringApplication, String[])
+	 * 默认加载{@link org.springframework.boot.context.event.EventPublishingRunListener}
+	 * @param args
+	 * @return
+	 */
 	private SpringApplicationRunListeners getRunListeners(String[] args) {
 		Class<?>[] types = new Class<?>[] { SpringApplication.class, String[].class };
 		return new SpringApplicationRunListeners(logger,
 				getSpringFactoriesInstances(SpringApplicationRunListener.class, types, this, args));
 	}
 
+	/**
+	 * 获取指定类的特定子类实例
+	 * @param type
+	 * @param <T>
+	 * @return
+	 */
 	private <T> Collection<T> getSpringFactoriesInstances(Class<T> type) {
 		return getSpringFactoriesInstances(type, new Class<?>[] {});
 	}
 
+	/**
+	 * 获取指定类的特定子类实例
+	 * @param type 指定类
+	 * @param parameterTypes 子类的构造函数参数类型
+	 * @param args 子类构造函数的参数值
+	 * @param <T>  指定类泛型
+	 * @return
+	 */
 	private <T> Collection<T> getSpringFactoriesInstances(Class<T> type, Class<?>[] parameterTypes, Object... args) {
+		//获取类加载器
 		ClassLoader classLoader = getClassLoader();
 		// Use names and ensure unique to protect against duplicates
+		/**
+		 * 获取特定子类名List
+		 * {@link SpringFactoriesLoader.loadFactoryNames(type, classLoader)}这个类的主流程：
+		 * 1遍历所有META-INF/spring.factories文件
+		 * 2将获取的属性封装到{@link org.springframework.util.MultiValueMap}中，MultiValueMap本质是{@link Map<String,List<T> val>}
+		 * 3 return MultiValueMap.get(type.getName());
+		 */
 		Set<String> names = new LinkedHashSet<>(SpringFactoriesLoader.loadFactoryNames(type, classLoader));
+		/**
+		 * 实例化子类List
+		 */
 		List<T> instances = createSpringFactoriesInstances(type, parameterTypes, classLoader, args, names);
+		/**
+		 * 排序{@link org.springframework.core.annotation.AnnotationAwareOrderComparator}
+		 */
 		AnnotationAwareOrderComparator.sort(instances);
 		return instances;
 	}
 
+	/**
+	 * 遍历names，实例化指定的类
+	 * @param type 父类
+	 * @param parameterTypes 构造函数的参数类型List
+	 * @param classLoader 加载器
+	 * @param args 构造函数的参数值List
+	 * @param names 需要实例化的类名List
+	 * @param <T>
+	 * @return 需要实例化的类实例List
+	 */
 	@SuppressWarnings("unchecked")
 	private <T> List<T> createSpringFactoriesInstances(Class<T> type, Class<?>[] parameterTypes,
 			ClassLoader classLoader, Object[] args, Set<String> names) {
 		List<T> instances = new ArrayList<>(names.size());
 		for (String name : names) {
 			try {
+				//加载指定的类
 				Class<?> instanceClass = ClassUtils.forName(name, classLoader);
+				//判断是否是指定父类的子类
 				Assert.isAssignable(type, instanceClass);
+				//获取指定构造函数
 				Constructor<?> constructor = instanceClass.getDeclaredConstructor(parameterTypes);
+				/**
+				 * 通过构造函数实例化，{@link org.springframework.beans.BeanUtils}
+				 */
 				T instance = (T) BeanUtils.instantiateClass(constructor, args);
 				instances.add(instance);
 			}
@@ -448,6 +542,10 @@ public class SpringApplication {
 		return instances;
 	}
 
+	/**
+	 * 根据webApplicationType，获取环境配置管理类
+	 * @return
+	 */
 	private ConfigurableEnvironment getOrCreateEnvironment() {
 		if (this.environment != null) {
 			return this.environment;
@@ -475,10 +573,12 @@ public class SpringApplication {
 	 */
 	protected void configureEnvironment(ConfigurableEnvironment environment, String[] args) {
 		if (this.addConversionService) {
+			//添加数据转换Serivce
 			ConversionService conversionService = ApplicationConversionService.getSharedInstance();
 			environment.setConversionService((ConfigurableConversionService) conversionService);
 		}
 		configurePropertySources(environment, args);
+		//这里args其实没用到？
 		configureProfiles(environment, args);
 	}
 
@@ -491,9 +591,12 @@ public class SpringApplication {
 	 */
 	protected void configurePropertySources(ConfigurableEnvironment environment, String[] args) {
 		MutablePropertySources sources = environment.getPropertySources();
+		//是否存在默认配置
 		if (this.defaultProperties != null && !this.defaultProperties.isEmpty()) {
+			//在配置队列末尾添加默认配置
 			sources.addLast(new MapPropertySource("defaultProperties", this.defaultProperties));
 		}
+		//判断是否加载Jvm传入参数
 		if (this.addCommandLineProperties && args.length > 0) {
 			String name = CommandLinePropertySource.COMMAND_LINE_PROPERTY_SOURCE_NAME;
 			if (sources.contains(name)) {
@@ -607,6 +710,9 @@ public class SpringApplication {
 			}
 		}
 		if (this.addConversionService) {
+			/**
+			 * {@link ApplicationConversionService}单例
+			 */
 			context.getBeanFactory().setConversionService(ApplicationConversionService.getSharedInstance());
 		}
 	}
@@ -704,6 +810,8 @@ public class SpringApplication {
 	 * Either the ClassLoader that will be used in the ApplicationContext (if
 	 * {@link #setResourceLoader(ResourceLoader) resourceLoader} is set, or the context
 	 * class loader (if not null), or the loader of the Spring {@link ClassUtils} class.
+	 * 获取类加载器，如果resourceLoader是空，则返回默认加载器
+	 * 默认加载器：依次判断当前线程加载器，ClassUtils类的加载器，jvm的启动加载器，取第一个非null加载器
 	 * @return a ClassLoader (never null)
 	 */
 	public ClassLoader getClassLoader() {
@@ -1212,14 +1320,16 @@ public class SpringApplication {
 	 * @return the listeners
 	 */
 	public Set<ApplicationListener<?>> getListeners() {
+		//浅度Copy一份this.listeners
 		return asUnmodifiableOrderedSet(this.listeners);
 	}
 
 	/**
 	 * Static helper that can be used to run a {@link SpringApplication} from the
 	 * specified source using default settings.
-	 * @param primarySource the primary source to load
-	 * @param args the application arguments (usually passed from a Java main method)
+	 * 创建SpringApplication
+	 * @param primarySource the primary source to load；将指定的class所在包作为root路径
+	 * @param args the application arguments (usually passed from a Java main method) 启动参数
 	 * @return the running {@link ApplicationContext}
 	 */
 	public static ConfigurableApplicationContext run(Class<?> primarySource, String... args) {
@@ -1229,6 +1339,7 @@ public class SpringApplication {
 	/**
 	 * Static helper that can be used to run a {@link SpringApplication} from the
 	 * specified sources using default settings and user supplied arguments.
+	 * new SpringApplication并执行run
 	 * @param primarySources the primary sources to load
 	 * @param args the application arguments (usually passed from a Java main method)
 	 * @return the running {@link ApplicationContext}

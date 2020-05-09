@@ -73,7 +73,9 @@ final class FailureAnalyzers implements SpringBootExceptionReporter {
 		for (String analyzerName : analyzerNames) {
 			try {
 				Constructor<?> constructor = ClassUtils.forName(analyzerName, classLoader).getDeclaredConstructor();
+				//构造函数访问权限判断
 				ReflectionUtils.makeAccessible(constructor);
+				//加入分析队列
 				analyzers.add((FailureAnalyzer) constructor.newInstance());
 			}
 			catch (Throwable ex) {

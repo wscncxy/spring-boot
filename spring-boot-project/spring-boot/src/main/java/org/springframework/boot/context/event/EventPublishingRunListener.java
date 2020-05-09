@@ -53,6 +53,7 @@ public class EventPublishingRunListener implements SpringApplicationRunListener,
 
 	private final String[] args;
 
+	//事件发布者
 	private final SimpleApplicationEventMulticaster initialMulticaster;
 
 	public EventPublishingRunListener(SpringApplication application, String[] args) {
@@ -71,6 +72,7 @@ public class EventPublishingRunListener implements SpringApplicationRunListener,
 
 	@Override
 	public void starting() {
+		//发布application开始消息
 		this.initialMulticaster.multicastEvent(new ApplicationStartingEvent(this.application, this.args));
 	}
 
