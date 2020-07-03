@@ -48,8 +48,6 @@ class Lifecycle implements Closeable {
 
 	private final BuildRequest request;
 
-	private final ImageReference runImageReference;
-
 	private final EphemeralBuilder builder;
 
 	private final LifecycleVersion lifecycleVersion;
@@ -73,15 +71,12 @@ class Lifecycle implements Closeable {
 	 * @param log build output log
 	 * @param docker the Docker API
 	 * @param request the request to process
-	 * @param runImageReference a reference to run image that should be used
 	 * @param builder the ephemeral builder used to run the phases
 	 */
-	Lifecycle(BuildLog log, DockerApi docker, BuildRequest request, ImageReference runImageReference,
-			EphemeralBuilder builder) {
+	Lifecycle(BuildLog log, DockerApi docker, BuildRequest request, EphemeralBuilder builder) {
 		this.log = log;
 		this.docker = docker;
 		this.request = request;
-		this.runImageReference = runImageReference;
 		this.builder = builder;
 		this.lifecycleVersion = LifecycleVersion.parse(builder.getBuilderMetadata().getLifecycle().getVersion());
 		this.platformVersion = ApiVersion.parse(builder.getBuilderMetadata().getLifecycle().getApi().getPlatform());
@@ -115,85 +110,34 @@ class Lifecycle implements Closeable {
 		if (this.request.isCleanCache()) {
 			deleteVolume(this.buildCacheVolume);
 		}
-		run(detectPhase());
-		run(analyzePhase());
-		if (this.request.isCleanCache()) {
-			this.log.skippingPhase("restorer", "due to cleaning cache");
-		}
-		else {
-			run(restorePhase());
-		}
-		run(buildPhase());
-		run(exportPhase());
+		run(createPhase());
 		this.log.executedLifecycle(this.request);
 	}
 
-	private Phase detectPhase() {
-		Phase phase = createPhase("detector");
+	private Phase createPhase() {
+		Phase phase = new Phase("creator", isVerboseLogging());
+		phase.withDaemonAccess();
+		phase.withLogLevelArg();
 		phase.withArgs("-app", Directory.APPLICATION);
 		phase.withArgs("-platform", Directory.PLATFORM);
-		phase.withLogLevelArg();
-		return phase;
-	}
-
-	private Phase restorePhase() {
-		Phase phase = createPhase("restorer");
-		phase.withDaemonAccess();
-		phase.withArgs("-cache-dir", Directory.CACHE);
+		phase.withArgs("-run-image", this.request.getRunImage());
 		phase.withArgs("-layers", Directory.LAYERS);
-		phase.withLogLevelArg();
-		phase.withBinds(this.buildCacheVolume, Directory.CACHE);
-		return phase;
-	}
-
-	private Phase analyzePhase() {
-		Phase phase = createPhase("analyzer");
-		phase.withDaemonAccess();
-		phase.withLogLevelArg();
+		phase.withArgs("-cache-dir", Directory.CACHE);
+		phase.withArgs("-launch-cache", Directory.LAUNCH_CACHE);
 		phase.withArgs("-daemon");
 		if (this.request.isCleanCache()) {
-			phase.withArgs("-skip-layers");
+			phase.withArgs("-skip-restore");
 		}
-		else {
-			phase.withArgs("-cache-dir", Directory.CACHE);
-		}
-		phase.withArgs("-layers", Directory.LAYERS);
 		phase.withArgs(this.request.getName());
-		phase.withBinds(this.buildCacheVolume, Directory.CACHE);
-		return phase;
-	}
-
-	private Phase buildPhase() {
-		Phase phase = createPhase("builder");
-		phase.withArgs("-layers", Directory.LAYERS);
-		phase.withArgs("-app", Directory.APPLICATION);
-		phase.withArgs("-platform", Directory.PLATFORM);
-		return phase;
-	}
-
-	private Phase exportPhase() {
-		Phase phase = createPhase("exporter");
-		phase.withDaemonAccess();
-		phase.withLogLevelArg();
-		phase.withArgs("-image", this.runImageReference);
-		phase.withArgs("-layers", Directory.LAYERS);
-		phase.withArgs("-app", Directory.APPLICATION);
-		phase.withArgs("-daemon");
-		phase.withArgs("-launch-cache", Directory.LAUNCH_CACHE);
-		phase.withArgs("-cache-dir", Directory.CACHE);
-		phase.withArgs(this.request.getName());
-		phase.withBinds(this.launchCacheVolume, Directory.LAUNCH_CACHE);
-		phase.withBinds(this.buildCacheVolume, Directory.CACHE);
-		return phase;
-	}
-
-	private Phase createPhase(String name) {
-		boolean verboseLogging = this.request.isVerboseLogging()
-				&& this.lifecycleVersion.isEqualOrGreaterThan(LOGGING_MINIMUM_VERSION);
-		Phase phase = new Phase(name, verboseLogging);
 		phase.withBinds(this.layersVolume, Directory.LAYERS);
 		phase.withBinds(this.applicationVolume, Directory.APPLICATION);
+		phase.withBinds(this.buildCacheVolume, Directory.CACHE);
+		phase.withBinds(this.launchCacheVolume, Directory.LAUNCH_CACHE);
 		return phase;
+	}
+
+	private boolean isVerboseLogging() {
+		return this.request.isVerboseLogging() && this.lifecycleVersion.isEqualOrGreaterThan(LOGGING_MINIMUM_VERSION);
 	}
 
 	private void run(Phase phase) throws IOException {

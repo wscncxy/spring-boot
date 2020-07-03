@@ -94,12 +94,13 @@ public class BuildImageTests extends AbstractArchiveIntegrationTests {
 		mavenBuild.project("build-image").goals("package")
 				.systemProperty("spring-boot.build-image.imageName", "example.com/test/cmd-property-name:v1")
 				.systemProperty("spring-boot.build-image.builder",
-						"gcr.io/paketo-buildpacks/builder:base-platform-api-0.2")
+						"gcr.io/paketo-buildpacks/builder:full-cf-platform-api-0.3")
+				.systemProperty("spring-boot.build-image.runImage", "gcr.io/paketo-buildpacks/run:full-cnb-cf")
 				.execute((project) -> {
 					assertThat(buildLog(project)).contains("Building image")
 							.contains("example.com/test/cmd-property-name:v1")
-							.contains("paketo-buildpacks/builder:base-platform-api-0.2")
-							.contains("Successfully built image");
+							.contains("paketo-buildpacks/builder:full-cf-platform-api-0.3")
+							.contains("paketo-buildpacks/run:full-cnb-cf").contains("Successfully built image");
 					ImageReference imageReference = ImageReference.of("example.com/test/cmd-property-name:v1");
 					try (GenericContainer<?> container = new GenericContainer<>(imageReference.toString())) {
 						container.waitingFor(Wait.forLogMessage("Launched\\n", 1)).start();
@@ -111,10 +112,11 @@ public class BuildImageTests extends AbstractArchiveIntegrationTests {
 	}
 
 	@TestTemplate
-	void whenBuildImageIsInvokedWithV2BuilderImage(MavenBuild mavenBuild) {
-		mavenBuild.project("build-image-v2-builder").goals("package").execute((project) -> {
+	void whenBuildImageIsInvokedWithCustomBuilderImageAndRunImage(MavenBuild mavenBuild) {
+		mavenBuild.project("build-image-custom-builder").goals("package").execute((project) -> {
 			assertThat(buildLog(project)).contains("Building image")
-					.contains("paketo-buildpacks/builder:base-platform-api-0.2")
+					.contains("paketo-buildpacks/builder:full-cf-platform-api-0.3")
+					.contains("paketo-buildpacks/run:full-cnb-cf")
 					.contains("docker.io/library/build-image-v2-builder:0.0.1.BUILD-SNAPSHOT")
 					.contains("Successfully built image");
 			ImageReference imageReference = ImageReference
@@ -132,7 +134,7 @@ public class BuildImageTests extends AbstractArchiveIntegrationTests {
 	void failsWhenBuilderFails(MavenBuild mavenBuild) {
 		mavenBuild.project("build-image-builder-error").goals("package")
 				.executeAndFail((project) -> assertThat(buildLog(project)).contains("Building image")
-						.contains("Builder lifecycle 'builder' failed with status code"));
+						.containsPattern("Builder lifecycle '.*' failed with status code"));
 	}
 
 	private void writeLongNameResource(File project) {

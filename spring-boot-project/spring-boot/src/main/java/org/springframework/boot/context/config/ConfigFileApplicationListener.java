@@ -326,8 +326,7 @@ public class ConfigFileApplicationListener implements EnvironmentPostProcessor, 
 		Loader(ConfigurableEnvironment environment, ResourceLoader resourceLoader) {
 			this.environment = environment;
 			this.placeholdersResolver = new PropertySourcesPlaceholdersResolver(this.environment);
-			this.resourceLoader = (resourceLoader != null) ? resourceLoader
-					: new DefaultResourceLoader(getClass().getClassLoader());
+			this.resourceLoader = (resourceLoader != null) ? resourceLoader : new DefaultResourceLoader(null);
 			this.propertySourceLoaders = SpringFactoriesLoader.loadFactories(PropertySourceLoader.class,
 					getClass().getClassLoader());
 		}
@@ -580,10 +579,10 @@ public class ConfigFileApplicationListener implements EnvironmentPostProcessor, 
 
 		private Resource[] getResourcesFromPatternLocation(String location) throws IOException {
 			String directoryPath = location.substring(0, location.indexOf("*/"));
-			String fileName = location.substring(location.lastIndexOf("/") + 1);
 			Resource resource = this.resourceLoader.getResource(directoryPath);
 			File[] files = resource.getFile().listFiles(File::isDirectory);
 			if (files != null) {
+				String fileName = location.substring(location.lastIndexOf("/") + 1);
 				Arrays.sort(files, FILE_COMPARATOR);
 				return Arrays.stream(files).map((file) -> file.listFiles((dir, name) -> name.equals(fileName)))
 						.filter(Objects::nonNull).flatMap((Function<File[], Stream<File>>) Arrays::stream)
@@ -728,8 +727,6 @@ public class ConfigFileApplicationListener implements EnvironmentPostProcessor, 
 
 		private void assertValidConfigName(String name) {
 			Assert.state(!name.contains("*"), () -> "Config name '" + name + "' cannot contain wildcards");
-			Assert.state(!name.contains("/") && !name.contains("\\"),
-					() -> "Config name '" + name + "' cannot contain slashes");
 		}
 
 		private void addLoadedPropertySources() {
